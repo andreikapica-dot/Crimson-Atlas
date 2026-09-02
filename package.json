@@ -1,0 +1,58 @@
+{
+  "name": "crimson-atlas",
+  "version": "0.1.0-beta.3",
+  "private": true,
+  "description": "Local interactive companion map for Crimson Desert",
+  "author": "Andrei",
+  "main": "desktop/electron-main.cjs",
+  "build": {
+    "appId": "com.andrei33721.crimsonatlas",
+    "productName": "Crimson Atlas",
+    "copyright": "Copyright © 2026 Andrei",
+    "asar": true,
+    "asarUnpack": [],
+    "compression": "normal",
+    "electronVersion": "44.0.0",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release/artifacts",
+      "buildResources": "release/resources"
+    },
+    "files": [
+      "package.json",
+      "desktop/electron-main.cjs",
+      "frontend/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "release/backend-dist/CrimsonAtlasService",
+        "to": "backend/CrimsonAtlasService"
+      },
+      {
+        "from": "release/NOTICE.txt",
+        "to": "NOTICE.txt"
+      }
+    ],
+    "win": {
+      "icon": "release/resources/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Crimson Atlas",
+      "uninstallDisplayName": "Crimson Atlas",
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-Portable.${ext}"
+    }
+  }
+}
