@@ -9,6 +9,26 @@ from pathlib import Path
 from typing import Optional
 
 
+def configure_console_encoding() -> None:
+    """Configure stdout/stderr for UTF-8 output on Windows.
+
+    On legacy Windows locales (e.g. Korean CP949, Japanese CP932), the default
+    console encoding cannot encode characters such as em-dash (\\u2014). Without
+    reconfiguration, Unicode output causes ``UnicodeEncodeError`` and crashes
+    the backend at startup. This function is defensive: it never raises.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
 def setup_logging(
     log_dir: Optional[Path] = None,
     console_level: int = logging.INFO,

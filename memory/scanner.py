@@ -29,11 +29,13 @@ class AOBScanner:
         self._module_data: bytes = b""
         self._module_base: int = 0
         self._module_size: int = 0
+        self._executable_ranges: list[tuple[int, int]] = []
 
     def read_module(self) -> tuple[bytes, int, int]:
         """Read the entire game module into memory.
 
         Returns (module_data, module_base, module_size).
+        Also populates _executable_ranges for section validation.
         """
         if not self.game_process.is_attached or not self.game_process.module:
             raise RuntimeError("Not attached to process")
@@ -57,8 +59,73 @@ class AOBScanner:
         self._module_data = bytes(data)
         self._module_base = base
         self._module_size = size
+        # Keep the parser input identical in Python and in the Cython release.
+        # Cython enforces the ``bytes`` annotation at runtime and rejects the
+        # mutable bytearray used while the module is being assembled.
+        self._executable_ranges = self._parse_executable_sections(
+            self._module_data, base
+        )
 
         return self._module_data, base, size
+
+    def _parse_executable_sections(self, data: bytes, base: int) -> list[tuple[int, int]]:
+        """Parse PE headers to find executable section ranges.
+
+        Returns a list of (start VA, end VA) tuples for sections
+        with the executable flag set.
+        """
+        IMAGE_FILE_EXECUTABLE_IMAGE = 0x0002
+        IMAGE_SCN_MEM_EXECUTE = 0x20000000
+        ranges: list[tuple[int, int]] = []
+
+        try:
+            if len(data) < 64:
+                return ranges
+
+            e_lfanew = int.from_bytes(data[0x3C:0x40], "little")
+            if e_lfanew + 24 > len(data):
+                return ranges
+
+            magic = data[e_lfanew:e_lfanew + 4]
+            if magic != b"\x50\x45\x00\x00":
+                return ranges
+
+            number_of_sections = int.from_bytes(data[e_lfanew + 6:e_lfanew + 8], "little")
+            size_of_optional_header = int.from_bytes(data[e_lfanew + 20:e_lfanew + 22], "little")
+            optional_header_offset = e_lfanew + 24
+            section_table_offset = optional_header_offset + size_of_optional_header
+
+            for i in range(number_of_sections):
+                sec_offset = section_table_offset + i * 40
+                if sec_offset + 40 > len(data):
+                    break
+
+                characteristics = int.from_bytes(data[sec_offset + 36:sec_offset + 40], "little")
+                if characteristics & IMAGE_SCN_MEM_EXECUTE:
+                    virtual_address = int.from_bytes(data[sec_offset + 12:sec_offset + 16], "little")
+                    virtual_size = int.from_bytes(data[sec_offset + 8:sec_offset + 12], "little")
+                    if virtual_size == 0:
+                        virtual_size = int.from_bytes(data[sec_offset + 16:sec_offset + 20], "little")
+                    if virtual_address > 0 and virtual_size > 0:
+                        ranges.append(
+                            (base + virtual_address, base + virtual_address + virtual_size)
+                        )
+                        log.debug(
+                            "Executable section: VA=%#x size=%#x",
+                            base + virtual_address, virtual_size,
+                        )
+
+        except Exception as e:
+            log.debug("Failed to parse executable sections: %s", e)
+
+        return ranges
+
+    def is_in_executable_section(self, address: int) -> bool:
+        """Check if an address falls within an executable PE section."""
+        for start, end in self._executable_ranges:
+            if start <= address < end:
+                return True
+        return False
 
     def find_static_xyz(self, data: bytes, base: int) -> tuple[int, int, int]:
         """Find static XYZ addresses via vmovsd+mov pattern.
@@ -146,27 +213,75 @@ class AOBScanner:
           E9 xx xx xx xx 90 90 90 (8-byte JMP patch)
 
         Returns absolute address or None.
+        Returns None if 0 or >1 candidates found (ambiguous).
         """
-        confirm = b"\x41\x0F\x58\x45\x00\x41\x0F\x11\x45\x00"
         hook = b"\x0F\x28\xC6\xF3\x45\x0F\x5C\xC8"
+        confirm_patterns = [
+            b"\x41\x0F\x58\x45\x00\x41\x0F\x11\x45\x00",
+        ]
         stale_jmp_prefix = b"\xE9"
         stale_jmp_size = 8
 
+        candidates: list[int] = []
+
+        for confirm in confirm_patterns:
+            pos = 0
+            while pos < len(data) - len(confirm) - 8:
+                i = data.find(confirm, pos)
+                if i == -1:
+                    break
+
+                hook_offset = i - 8
+                if hook_offset >= 0:
+                    before = data[hook_offset:i]
+
+                    if before == hook:
+                        candidates.append(hook_offset)
+                        pos = i + 1
+                        continue
+
+                    if len(before) == stale_jmp_size and before[0:1] == stale_jmp_prefix:
+                        if all(b == 0x90 for b in before[5:8]):
+                            log.debug(
+                                "Physics hook found with stale JMP at %#x (RVA=%#x)",
+                                base + hook_offset, hook_offset,
+                            )
+                            candidates.append(hook_offset)
+                            pos = i + 1
+                            continue
+
+                pos = i + 1
+
+        if len(candidates) == 1:
+            return base + candidates[0]
+        elif len(candidates) > 1:
+            log.warning(
+                "Physics delta hook: %d candidates found — ambiguous, rejecting",
+                len(candidates),
+            )
+            return None
+
+        # Fallback: search for hook pattern directly without confirmation
+        hook_matches = []
         pos = 0
         while pos < len(data) - 18:
-            i = data.find(confirm, pos)
+            i = data.find(hook, pos)
             if i == -1:
                 break
-            if i >= 8:
-                before = data[i - 8:i]
-                if before == hook:
-                    return base + i - 8
-                # Accept stale JMP from previous session
-                if len(before) == stale_jmp_size and before[0:1] == stale_jmp_prefix:
-                    # Verify it looks like a JMP rel32 + NOPs
-                    if all(b == 0x90 for b in before[5:8]):
-                        return base + i - 8
+            if i + len(hook) + 10 <= len(data):
+                after = data[i + len(hook):i + len(hook) + 10]
+                if any(after.startswith(c) for c in confirm_patterns):
+                    hook_matches.append(i)
             pos = i + 1
+
+        if len(hook_matches) == 1:
+            return base + hook_matches[0]
+        elif len(hook_matches) > 1:
+            log.warning(
+                "Physics delta hook: %d match(es) without stale JMP — ambiguous, rejecting",
+                len(hook_matches),
+            )
+            return None
 
         return None
 
@@ -187,8 +302,13 @@ class AOBScanner:
             )
         return None
 
-    def scan(self, game_version: str) -> dict[str, ScanResult]:
+    def scan(self, game_version: str = "generic") -> dict[str, ScanResult]:
         """Scan for all known patterns for a game version.
+
+        Args:
+            game_version: Game version string for signature lookup.
+                Falls back to generic signatures if version-specific
+                signatures are not found.
 
         Returns dict of pattern_name -> ScanResult.
         """
@@ -201,7 +321,10 @@ class AOBScanner:
         signatures = get_signatures(game_version)
         results: dict[str, ScanResult] = {}
 
-        log.info("AOB scan started for version %s (module size=%#x)", game_version, size)
+        log.info(
+            "AOB scan started for version %s (module size=%#x, base=%#x)",
+            game_version, size, base,
+        )
         self._module_base = base
         self._module_size = size
 
@@ -234,11 +357,16 @@ class AOBScanner:
         # Physics delta hook
         phys_addr = self.find_physics_delta_hook(data, base)
         if phys_addr:
-            if validate_address(phys_addr, base, size):
+            if validate_address(phys_addr, base, size) and self.is_in_executable_section(phys_addr):
                 results["physics_delta"] = ScanResult(
                     "physics_delta", phys_addr, phys_addr - base, size
                 )
                 log.info("Physics delta hook found: %#x (RVA=%#x)", phys_addr, phys_addr - base)
+            elif validate_address(phys_addr, base, size):
+                log.warning(
+                    "Physics delta hook found at %#x but NOT in executable section — rejecting",
+                    phys_addr,
+                )
             else:
                 log.warning("Physics delta address %#x is outside module range — rejecting", phys_addr)
         else:

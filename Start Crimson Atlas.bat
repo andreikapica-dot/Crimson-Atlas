@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+set ELECTRON_RUN_AS_NODE=
 if not exist ".venv\Scripts\python.exe" (
   echo Crimson Atlas is not set up yet. Run "Setup Crimson Atlas.bat" once.
   pause

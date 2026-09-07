@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import sys
 
+from logging_config import configure_console_encoding
+configure_console_encoding()
+
 from app.main import main, self_test
 
 

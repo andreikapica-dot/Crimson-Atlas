@@ -5,8 +5,21 @@ It provides live player tracking, Pywel and Abyss map support, searchable marker
 groups, personal markers, found-state tracking, map calibration, an always-on-top
 desktop window, and optional user-confirmed teleport commands.
 
-The interface is available in English and Russian. The desktop application uses
-Electron and React/TypeScript; the local game service is written in Python.
+The interface is available in English, Russian, Korean, Simplified Chinese,
+Traditional Chinese, and Portuguese. The desktop application uses Electron and
+React/TypeScript; the local game service is written in Python.
+
+Current beta features also include:
+
+- a dedicated settings window with marker size, clustering, label, visibility,
+  focus, and found-marker opacity controls;
+- a compact navigation window and optional Crimson Route 6.9.4+ integration;
+- route display in Atlas and, through Crimson Route, on the in-game minimap,
+  world map, and navigation overlay;
+- read-only completion detection from the newest local save file, using exact
+  catalog links rather than nearest-marker guesses.
+
+See [CHANGELOG.md](CHANGELOG.md) for the version-by-version history.
 
 ## Source-only repository
 

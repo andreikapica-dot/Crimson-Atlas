@@ -6,7 +6,7 @@ const catalog: CatalogData = {
   teleportableCount: 1,
   source: { name: "Source", url: "https://example.com" },
   groups: [{ id: "travel", label: "Перемещение", color: "#fff", icon: "/group.webp" }],
-  types: [{ id: "waypoint", name: "Точка пути", nameEn: "Waypoint", group: "travel", icon: "/point.webp" }],
+  types: [{ id: "waypoint", name: "Точка пути", nameEn: "Waypoint", translations: { ko: "경유지" }, group: "travel", icon: "/point.webp" }],
   realms: {
     pywel: [{ type: 0, points: [[10, 20, 30], [40, null, 50]] }],
     abyss: [],
@@ -37,5 +37,10 @@ describe("marker catalog", () => {
       y: 20,
       z: 30,
     });
+  });
+
+  it("uses translated interface groups and safe English marker-name fallback for new languages", () => {
+    const [marker] = flattenCatalog(catalog, "pywel", {}, "ko");
+    expect(marker).toMatchObject({ name: "경유지", groupLabel: "여행 및 장소", x: 10, z: 30 });
   });
 });

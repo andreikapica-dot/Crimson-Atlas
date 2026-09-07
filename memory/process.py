@@ -71,12 +71,22 @@ class GameProcess:
                 self.pm.process_handle, PROCESS_NAME
             )
             self._state = ProcessState.ATTACHED
-            log.info(
-                "Attached to %s — base=%#x size=%#x",
-                PROCESS_NAME,
-                self.module.lpBaseOfDll,
-                self.module.SizeOfImage,
-            )
+            game_version = self.get_game_version()
+            if game_version:
+                log.info(
+                    "Attached to %s (version=%s) — base=%#x size=%#x",
+                    PROCESS_NAME,
+                    game_version,
+                    self.module.lpBaseOfDll,
+                    self.module.SizeOfImage,
+                )
+            else:
+                log.info(
+                    "Attached to %s — base=%#x size=%#x",
+                    PROCESS_NAME,
+                    self.module.lpBaseOfDll,
+                    self.module.SizeOfImage,
+                )
             return True
         except pymem.exception.ProcessNotFound:
             self._last_error = "Process not found"
@@ -204,3 +214,79 @@ class GameProcess:
         if not self.module:
             raise RuntimeError("Not attached or module not loaded")
         return self.module.SizeOfImage
+
+    def get_game_version(self) -> Optional[str]:
+        """Get the file version of the game executable.
+
+        Uses the Windows API to read version information from the game
+        executable on disk. This is for informational logging only and does
+        not affect AOB scanning, which is fully build-independent.
+
+        Returns:
+            File version string like "1.0.0.2692" or None if unavailable.
+        """
+        if not self.module:
+            return None
+
+        try:
+            exe_path = self.pm.executable
+        except Exception:
+            return None
+
+        if not exe_path or not os.path.isfile(exe_path):
+            return None
+
+        try:
+            kernel32 = ctypes.windll.kernel32
+            dll_version = ctypes.windll.version
+        except AttributeError:
+            return None
+
+        try:
+            size = dll_version.GetFileVersionInfoSize(exe_path, 0)
+            if not size:
+                return None
+
+            data = (ctypes.c_ubyte * size)()
+            if not dll_version.GetFileVersionInfo(exe_path, 0, size, data):
+                return None
+
+            ffi_ptr = ctypes.c_void_p()
+            ffi_len = ctypes.c_uint()
+            if not dll_version.VerQueryValue(data, "\\", ctypes.byref(ffi_ptr), ctypes.byref(ffi_len)):
+                return None
+
+            ffi_struct = (
+                ctypes.c_uint,  # dwSignature
+                ctypes.c_uint,  # dwStrucVersion
+                ctypes.c_uint,  # dwFileVersionMS
+                ctypes.c_uint,  # dwFileVersionLS
+                ctypes.c_uint,  # dwProductVersionMS
+                ctypes.c_uint,  # dwProductVersionLS
+                ctypes.c_uint,  # dwFileMask
+                ctypes.c_uint,  # dwFileType
+                ctypes.c_uint,  # dwFileSubtype
+                ctypes.c_uint,  # dwFileDateMS
+                ctypes.c_uint,  # dwFileDateLS
+            )
+            ffi = ctypes.cast(
+                ffi_ptr,
+                ctypes.POINTER(ffi_struct),
+            ).contents
+
+            if ffi[0] != 0xFEEF04BD:
+                return None
+
+            file_ver_ms = ffi[2]
+            file_ver_ls = ffi[3]
+
+            major = file_ver_ms >> 16
+            minor = file_ver_ms & 0xFFFF
+            build = file_ver_ls >> 16
+            patch = file_ver_ls & 0xFFFF
+
+            return f"{major}.{minor}.{build}.{patch}"
+
+        except Exception as e:
+            log.debug("Could not read game file version: %s", e)
+            return None

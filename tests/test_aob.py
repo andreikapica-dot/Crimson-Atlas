@@ -18,6 +18,7 @@ from memory.aob import (
 from memory.scanner import AOBScanner
 from memory.types import SignatureSet
 from memory.signatures import get_signatures
+from memory.hooks import PHYSICS_HOOK_ORIGINAL
 
 
 class TestNormalizePattern(unittest.TestCase):
@@ -212,10 +213,11 @@ class TestSignatureSelection(unittest.TestCase):
         self.assertTrue(len(sigs.physics_delta) > 0)
 
     def test_unknown_version(self) -> None:
-        """Unknown version returns empty signatures."""
+        """Unknown version returns generic fallback signatures."""
         sigs = get_signatures("9.99.99")
         self.assertIsInstance(sigs, SignatureSet)
-        self.assertEqual(len(sigs.physics_delta), 0)
+        self.assertTrue(len(sigs.physics_delta) > 0, "Generic fallback must include physics_delta")
+        self.assertEqual(sigs.physics_delta, PHYSICS_HOOK_ORIGINAL)
 
 
 if __name__ == "__main__":

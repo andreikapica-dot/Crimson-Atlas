@@ -4,9 +4,15 @@ All game-version-specific AOB patterns are defined here.
 DO NOT scatter AOB patterns throughout the codebase.
 
 Signatures are sourced from the verified working CD Companion implementation.
+
+The "generic" signature set is used for AOB patterns that are known to be
+stable across multiple game builds. The version-specific sets extend or
+override these patterns where game patches change instruction layout.
 """
 
 from __future__ import annotations
+
+import logging
 
 from memory.types import SignatureSet
 
@@ -14,43 +20,54 @@ from memory.types import SignatureSet
 # Each version key should match the game's build/version string.
 # Patterns are verified against the current game binary.
 
+# Physics delta hook — confirmed identical across builds 1.0.0.2079 and 1.0.0.2692.
+PHYSICS_DELTA_PATTERN = b"\x0F\x28\xC6\xF3\x45\x0F\x5C\xC8"
+
 SIGNATURES: dict[str, SignatureSet] = {
-    "2.00.00": SignatureSet(
-        # Entity base pattern: sub rsp,50; mov rdi,rcx
-        entity_base=b"\x48\x83\xEC\x50\x48\x8B\xF9\x48\x8B\x91\x30\x11\x00\x00",
-        # Position write: vmovsd [rip+disp], xmm0
-        position_write=b"\x0F\x11\x99\x90\x00\x00\x00",
-        # Health/invulnerability: mov [rcx+08], rbx
-        health=b"\x48\x8B\x46\x08\x48\x89\xF1",
-        # Map marker destination: vmovsd [rdx], xmm0
-        map_marker=b"\xC5\xFB\x10\x07\xC5\xFB\x11\x02\x8B\x47\x08\x89\x42\x08",
-        # World offset: vsubps pattern
+    "generic": SignatureSet(
         world_offset=b"\x0F\x5C\x1D",
-        # Physics delta hook: movaps xmm0, xmm6
-        physics_delta=b"\x0F\x28\xC6\xF3\x45\x0F\x5C\xC8",
-        # Camera heading: vmovss [r15+0x4CC], xmm2
-        camera_heading=b"\xC4\xC1\x7A\x11\x97\xCC\x04\x00\x00\xC5\x78\x2F\xCE",
-        # Static XYZ prefix: vmovsd [rip+disp32], xmm0
+        physics_delta=PHYSICS_DELTA_PATTERN,
         xyz_prefix=b"\xC5\xFB\x11\x05",
-        # Static XYZ mid: mov eax,[rsp+28] ; mov [rip+disp32],eax
         xyz_mid=b"\x8B\x44\x24\x28\x89\x05",
     ),
-    # Future versions should be added here
+    "2.00.00": SignatureSet(
+        entity_base=b"\x48\x83\xEC\x50\x48\x8B\xF9\x48\x8B\x91\x30\x11\x00\x00",
+        position_write=b"\x0F\x11\x99\x90\x00\x00\x00",
+        health=b"\x48\x8B\x46\x08\x48\x89\xF1",
+        map_marker=b"\xC5\xFB\x10\x07\xC5\xFB\x11\x02\x8B\x47\x08\x89\x42\x08",
+        world_offset=b"\x0F\x5C\x1D",
+        physics_delta=PHYSICS_DELTA_PATTERN,
+        camera_heading=b"\xC4\xC1\x7A\x11\x97\xCC\x04\x00\x00\xC5\x78\x2F\xCE",
+        xyz_prefix=b"\xC5\xFB\x11\x05",
+        xyz_mid=b"\x8B\x44\x24\x28\x89\x05",
+    ),
 }
 
 
 def get_signatures(version: str) -> SignatureSet:
     """Get signatures for a specific game version.
 
+    Falls back to the "generic" signature set for patterns that are
+    build-independent (physics_delta, xyz_prefix, xyz_mid, world_offset).
+
     Args:
-        version: Game version string (e.g. "2.00.00").
+        version: Game version string (e.g. "2.00.00", "1.0.0.2079").
 
     Returns:
-        Signature set for the version, or empty SignatureSet if unknown.
+        SignatureSet — version-specific if known, otherwise the generic set.
     """
-    return SIGNATURES.get(version, SignatureSet())
+    if version in SIGNATURES:
+        return SIGNATURES[version]
+
+    # Unknown version: use generic signatures as a fallback.
+    # The generic set covers AOB patterns that are stable across builds.
+    logging.info(
+        "Unknown game version '%s' — using generic signature set",
+        version,
+    )
+    return SIGNATURES["generic"]
 
 
 def list_versions() -> list[str]:
-    """List all known game versions."""
-    return list(SIGNATURES.keys())
+    """List all known game versions (excludes 'generic')."""
+    return [v for v in SIGNATURES if v != "generic"]

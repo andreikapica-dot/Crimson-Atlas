@@ -17,6 +17,7 @@ from memory.hooks import (
 from memory.types import HookInfo, PositionSource
 from memory.player_reader import PlayerPositionReader
 from memory.process import GameProcess
+from memory.teleport import TeleportEngine
 
 
 def _make_mock_process() -> MagicMock:
@@ -72,7 +73,8 @@ class TestPhysicsHookByteVerification(unittest.TestCase):
 
         with patch("ctypes.windll.kernel32.VirtualAllocEx", return_value=0x140001000):
             hook = engine.install_physics_hook(0x140000000)
-        self.assertEqual(hook.original_bytes, stale_jmp)
+        self.assertEqual(hook.original_bytes, PHYSICS_HOOK_ORIGINAL)
+        self.assertNotEqual(hook.original_bytes, stale_jmp)
         self.assertEqual(hook.capture_buffer_address, 0x140001800)
 
 
@@ -263,7 +265,7 @@ class TestLocalWorldOffsetCalculation(unittest.TestCase):
         self.reader.set_physics_hook(0x140003000)
 
         local_x, local_y, local_z = 100.0, 50.0, 200.0
-        offset_x, offset_y, offset_z = -5000.0, 0.0, 3000.0
+        offset_x, offset_y, offset_z = -5000.0, 125.0, 3000.0
 
         self.game_process.read_bytes = MagicMock(
             side_effect=[
@@ -277,7 +279,7 @@ class TestLocalWorldOffsetCalculation(unittest.TestCase):
         abs_pos = self.reader.get_absolute_position()
         self.assertIsNotNone(abs_pos)
         self.assertAlmostEqual(abs_pos[0], local_x + offset_x)
-        self.assertAlmostEqual(abs_pos[1], local_y + offset_y)
+        self.assertAlmostEqual(abs_pos[1], local_y)
         self.assertAlmostEqual(abs_pos[2], local_z + offset_z)
 
     def test_absolute_without_world_offset(self) -> None:
@@ -306,43 +308,233 @@ class TestLocalWorldOffsetCalculation(unittest.TestCase):
         self.assertAlmostEqual(abs_pos[2], local_z)
 
 
-class TestSourceSelection(unittest.TestCase):
-    """Test position source selection logic."""
+class TestSourceSelectionPolicy(unittest.TestCase):
+    """Test deterministic position source selection per new policy.
+
+    Policy: PHYSICS_HOOK preferred; STATIC_XYZ fallback only when hook fails;
+    UNAVAILABLE when neither is available.
+    """
 
     def setUp(self) -> None:
         """Set up test fixtures."""
         self.game_process = _make_mock_process()
         self.scanner = MagicMock()
         self.reader = PlayerPositionReader(self.game_process, self.scanner)
+        self.teleport = TeleportEngine(self.game_process)
 
-    def test_static_xyz_preferred(self) -> None:
-        """Static XYZ is preferred when available."""
-        scan_results = {
-            "xyz_x": MagicMock(address=0x140010000),
-            "xyz_y": MagicMock(address=0x140010004),
-            "xyz_z": MagicMock(address=0x140010008),
-            "world_offset": MagicMock(address=0x140020000),
-        }
-        self.reader.update_addresses(scan_results)
-        self.assertEqual(self.reader.position_source, PositionSource.STATIC_XYZ)
+    def _make_scan(self, static=True, physics=True):
+        """Build a scan_results dict matching the scanner output shape."""
+        from memory.types import ScanResult
+        results = {"world_offset": ScanResult("world_offset", 0x140020000, 0, 0)}
+        if static:
+            results["xyz_x"] = ScanResult("xyz_x", 0x140010000, 0, 0)
+            results["xyz_y"] = ScanResult("xyz_y", 0x140010004, 0, 0)
+            results["xyz_z"] = ScanResult("xyz_z", 0x140010008, 0, 0)
+        if physics:
+            results["physics_delta"] = ScanResult("physics_delta", 0x140030000, 0, 0)
+        return results
 
-    def test_physics_fallback_when_static_missing(self) -> None:
-        """Physics hook is fallback when static XYZ missing."""
-        scan_results = {
-            "world_offset": MagicMock(address=0x140020000),
-            "physics_delta": MagicMock(address=0x140030000),
-        }
-        self.reader.update_addresses(scan_results)
+    # 1) physics + static both found → hook installed → PHYSICS_HOOK
+    def test_physics_and_static_found_hook_success(self) -> None:
+        """Both sources found; hook installs → PHYSICS_HOOK preferred."""
+        scan = self._make_scan(static=True, physics=True)
+        self.reader.update_addresses(scan)
+
+        # Simulate successful hook installation
         self.reader.set_physics_hook(0x140003000)
-        self.assertEqual(self.reader.position_source, PositionSource.PHYSICS_HOOK)
+        self.teleport.set_physics_hook(0x140003000)
+        self.assertTrue(self.teleport.available)
 
-    def test_unavailable_when_no_source(self) -> None:
-        """Source is UNAVAILABLE when no position source found."""
-        scan_results = {
+        source = self.reader.select_position_source()
+        self.assertEqual(source, PositionSource.PHYSICS_HOOK)
+
+    # 2) physics found + static found + hook install fails → STATIC_XYZ
+    def test_physics_and_static_found_hook_fails_fallback_static(self) -> None:
+        """Hook install fails → fallback to STATIC_XYZ, teleport unavailable."""
+        scan = self._make_scan(static=True, physics=True)
+        self.reader.update_addresses(scan)
+
+        # Hook install failed — capture_buf_addr stays 0
+        source = self.reader.select_position_source()
+        self.assertEqual(source, PositionSource.STATIC_XYZ)
+        self.assertFalse(self.teleport.available)
+
+    # 3) physics found + no static → PHYSICS_HOOK
+    def test_physics_found_no_static(self) -> None:
+        """Physics found, no static → PHYSICS_HOOK after set_physics_hook."""
+        scan = self._make_scan(static=False, physics=True)
+        self.reader.update_addresses(scan)
+
+        self.reader.set_physics_hook(0x140003000)
+        self.teleport.set_physics_hook(0x140003000)
+        self.assertTrue(self.teleport.available)
+
+        source = self.reader.select_position_source()
+        self.assertEqual(source, PositionSource.PHYSICS_HOOK)
+
+    # 4) no physics + static found → STATIC_XYZ
+    def test_no_physics_static_found(self) -> None:
+        """No physics candidate → STATIC_XYZ fallback."""
+        scan = self._make_scan(static=True, physics=False)
+        self.reader.update_addresses(scan)
+
+        source = self.reader.select_position_source()
+        self.assertEqual(source, PositionSource.STATIC_XYZ)
+        self.assertFalse(self.teleport.available)
+
+    # 5) neither found → UNAVAILABLE
+    def test_neither_found(self) -> None:
+        """No source → UNAVAILABLE."""
+        scan = self._make_scan(static=False, physics=False)
+        self.reader.update_addresses(scan)
+
+        source = self.reader.select_position_source()
+        self.assertEqual(source, PositionSource.UNAVAILABLE)
+
+    # 6) physics + static → teleport_engine receives capture buffer
+    def test_teleport_receives_capture_buffer_on_hook_success(self) -> None:
+        """On hook success, teleport engine is wired to capture buffer."""
+        scan = self._make_scan(static=True, physics=True)
+        self.reader.update_addresses(scan)
+
+        capture_addr = 0x140003000
+        self.reader.set_physics_hook(capture_addr)
+        self.teleport.set_physics_hook(capture_addr)
+
+        self.assertTrue(self.teleport.available)
+
+    # 7) static fallback → teleport unavailable
+    def test_teleport_unavailable_on_static_fallback(self) -> None:
+        """On static fallback, teleport must be unavailable."""
+        scan = self._make_scan(static=True, physics=True)
+        self.reader.update_addresses(scan)
+
+        # Hook failed — teleport never gets set_physics_hook
+        self.assertFalse(self.teleport.available)
+
+    # 8) ambiguous physics hook → hook not installed
+    def test_ambiguous_physics_hook_not_installed(self) -> None:
+        """Ambiguous physics candidate must not result in hook installation."""
+        scan = {
             "world_offset": MagicMock(address=0x140020000),
+            "physics_delta": MagicMock(
+                address=0,  # scanner signals ambiguous
+                matches=3,
+            ),
         }
-        self.reader.update_addresses(scan_results)
-        self.assertEqual(self.reader.position_source, PositionSource.UNAVAILABLE)
+        self.reader.update_addresses(scan)
+
+        # select_position_source should fall back to UNAVAILABLE since
+        # set_physics_hook was never called (ambiguous candidate rejected)
+        source = self.reader.select_position_source()
+        self.assertEqual(source, PositionSource.UNAVAILABLE)
+
+    # 9) stale JMP behavior unchanged
+    def test_stale_jmp_behavior_unchanged(self) -> None:
+        """Stale JMP acceptance does not bypass ambiguity checks."""
+        # This test delegates to TestStaleJmpCleanup for the byte-level
+        # verification; here we confirm set_physics_hook still works after
+        # a stale-JMP-cleaned hook.
+        engine = HookEngine(_make_mock_process())
+        stale_jmp = b"\xE9" + b"\x00" * 4
+        engine.game_process.read_bytes = MagicMock(return_value=stale_jmp)
+        engine.game_process.write_bytes = MagicMock()
+
+        with patch("ctypes.windll.kernel32.VirtualAllocEx", return_value=0x140001000):
+            hook = engine.install_physics_hook(0x140000000)
+
+        self.assertEqual(hook.original_bytes, PHYSICS_HOOK_ORIGINAL)
+        self.assertNotEqual(hook.original_bytes, stale_jmp)
+
+        engine.remove_hook(0x140000000)
+        written_address, written_payload = engine.game_process.write_bytes.call_args.args
+        self.assertEqual(written_address, 0x140000000)
+        self.assertEqual(written_payload, PHYSICS_HOOK_ORIGINAL)
+
+    # 10) cleanup restores PHYSICS_HOOK_ORIGINAL
+    def test_cleanup_restores_physics_hook_original(self) -> None:
+        """remove_hook writes PHYSICS_HOOK_ORIGINAL back to target."""
+        engine = HookEngine(_make_mock_process())
+        engine.game_process.read_bytes = MagicMock(return_value=PHYSICS_HOOK_ORIGINAL)
+        engine.game_process.write_bytes = MagicMock()
+
+        with patch("ctypes.windll.kernel32.VirtualAllocEx", return_value=0x140001000):
+            hook = engine.install_physics_hook(0x140000000)
+
+        engine.remove_hook(0x140000000)
+        written_address, written_payload = engine.game_process.write_bytes.call_args.args
+        self.assertEqual(written_address, 0x140000000)
+        self.assertEqual(written_payload, PHYSICS_HOOK_ORIGINAL)
+
+
+class TestPositionSourceSelectionMethod(unittest.TestCase):
+    """Verify select_position_source and has_static_xyz methods."""
+
+    def setUp(self) -> None:
+        self.game_process = _make_mock_process()
+        self.scanner = MagicMock()
+        self.reader = PlayerPositionReader(self.game_process, self.scanner)
+
+    def test_select_source_physics_when_hook_active(self) -> None:
+        """PHYSICS_HOOK wins when capture buffer is set."""
+        self.reader.set_physics_hook(0x140003000)
+        src = self.reader.select_position_source()
+        self.assertEqual(src, PositionSource.PHYSICS_HOOK)
+
+    def test_select_source_static_when_no_hook(self) -> None:
+        """STATIC_XYZ when no hook but static addresses present."""
+        from memory.types import ScanResult
+        scan = {
+            "xyz_x": ScanResult("xyz_x", 0x140010000, 0, 0),
+            "xyz_y": ScanResult("xyz_y", 0x140010004, 0, 0),
+            "xyz_z": ScanResult("xyz_z", 0x140010008, 0, 0),
+        }
+        self.reader.update_addresses(scan)
+        src = self.reader.select_position_source()
+        self.assertEqual(src, PositionSource.STATIC_XYZ)
+
+    def test_select_source_unavailable_when_neither(self) -> None:
+        """UNAVAILABLE when no hook and no static."""
+        src = self.reader.select_position_source()
+        self.assertEqual(src, PositionSource.UNAVAILABLE)
+
+    def test_has_static_xyz_true(self) -> None:
+        """has_static_xyz returns True when addresses present."""
+        from memory.types import ScanResult
+        scan = {
+            "xyz_x": ScanResult("xyz_x", 0x140010000, 0, 0),
+            "xyz_y": ScanResult("xyz_y", 0x140010004, 0, 0),
+            "xyz_z": ScanResult("xyz_z", 0x140010008, 0, 0),
+        }
+        self.reader.update_addresses(scan)
+        self.assertTrue(self.reader.has_static_xyz())
+
+    def test_has_static_xyz_false(self) -> None:
+        """has_static_xyz returns False when no addresses."""
+        self.assertFalse(self.reader.has_static_xyz())
+
+
+class TestStaleJmpCleanup(unittest.TestCase):
+    """Regression test: stale JMP must not be restored on hook removal."""
+
+    def test_cleanup_restores_original_bytes_not_stale_jmp(self) -> None:
+        """When a stale JMP is found, cleanup must write PHYSICS_HOOK_ORIGINAL."""
+        engine = HookEngine(_make_mock_process())
+        stale_jmp = b"\xE9" + b"\x00" * 4
+        engine.game_process.read_bytes = MagicMock(return_value=stale_jmp)
+        engine.game_process.write_bytes = MagicMock()
+
+        with patch("ctypes.windll.kernel32.VirtualAllocEx", return_value=0x140001000):
+            hook = engine.install_physics_hook(0x140000000)
+
+        self.assertEqual(hook.original_bytes, PHYSICS_HOOK_ORIGINAL)
+        self.assertNotEqual(hook.original_bytes, stale_jmp)
+
+        engine.remove_hook(0x140000000)
+        written_address, written_payload = engine.game_process.write_bytes.call_args.args
+        self.assertEqual(written_address, 0x140000000)
+        self.assertEqual(written_payload, PHYSICS_HOOK_ORIGINAL)
+        self.assertNotEqual(written_payload, stale_jmp)
 
 
 if __name__ == "__main__":

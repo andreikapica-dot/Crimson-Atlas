@@ -30,6 +30,8 @@ class LocalServer:
         self._stop_event: asyncio.Event | None = None
         self._thread: threading.Thread | None = None
         self._running = False
+        self._startup_event = threading.Event()
+        self._startup_error: Exception | None = None
         self._packets_broadcast = 0
         self._commands: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=64)
 
@@ -50,15 +52,26 @@ class LocalServer:
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
-    def start(self) -> None:
-        """Start the server in a background thread."""
+    def start(self, timeout: float = 5.0) -> None:
+        """Start the server and confirm that this instance owns the port."""
         if self._running:
             log.warning("LocalServer already running")
             return
 
+        self._startup_event.clear()
+        self._startup_error = None
         self._running = True
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
+        if not self._startup_event.wait(timeout):
+            self._running = False
+            raise RuntimeError("LocalServer startup timed out")
+        if self._startup_error is not None:
+            self._running = False
+            raise RuntimeError(
+                f"LocalServer could not bind ws://{_HOST}:{_PORT}: "
+                f"{self._startup_error}"
+            ) from self._startup_error
 
     def stop(self) -> None:
         """Stop the server and disconnect all clients."""
@@ -122,8 +135,12 @@ class LocalServer:
         try:
             self._loop.run_until_complete(self._serve_forever())
         except Exception as exc:
+            self._startup_error = exc
+            self._startup_event.set()
             log.error("LocalServer event loop error: %s", exc)
         finally:
+            self._running = False
+            self._startup_event.set()
             self._loop.run_until_complete(self._loop.shutdown_asyncgens())
             self._loop.close()
 
@@ -137,6 +154,7 @@ class LocalServer:
             ping_timeout=20,
         ):
             log.info("LocalServer listening on ws://%s:%d", _HOST, _PORT)
+            self._startup_event.set()
             assert self._stop_event is not None
             await self._stop_event.wait()
 

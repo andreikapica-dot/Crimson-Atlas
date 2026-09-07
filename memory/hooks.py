@@ -196,7 +196,11 @@ class HookEngine:
                 raise RuntimeError(
                     f"Unexpected bytes at physics hook {hook_address:#x}: {actual.hex()}"
                 )
-
+        original_bytes = (
+            PHYSICS_HOOK_ORIGINAL
+            if actual[:1] == b"\xE9"
+            else actual
+        )
         # Allocate block if not already allocated
         if not self._block_address:
             self.allocate_block(near_address=hook_address)
@@ -234,7 +238,7 @@ class HookEngine:
         hook_info = HookInfo(
             address=hook_address,
             original_size=PHYSICS_HOOK_SIZE,
-            original_bytes=actual,
+            original_bytes=original_bytes,
             cave_address=cave_address,
             cave_size=len(cave_code),
             capture_buffer_address=capture_buf,

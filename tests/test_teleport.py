@@ -27,7 +27,7 @@ class TestTeleportEngine(unittest.TestCase):
         self.assertTrue(self.engine.available)
         address, payload = self.process.write_bytes.call_args.args
         self.assertEqual(address, 0x1010)
-        self.assertEqual(struct.unpack("<ffffI", payload), (100.0, 200.0, 300.0, 0.0, 1))
+        self.assertEqual(struct.unpack("<ffffI", payload), (100.0, 220.0, 300.0, 0.0, 1))
 
     def test_non_finite_coordinates_are_rejected_without_writing(self) -> None:
         self.engine.set_physics_hook(0x2000)

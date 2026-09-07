@@ -13,6 +13,7 @@ Outputs are written to `release/artifacts/`:
 - `Crimson Atlas-*-Setup.exe` - per-user installer with uninstall support.
 - `Crimson Atlas-*-Portable.exe` - portable single-file launcher.
 - `win-unpacked/` - unpacked build used by automated smoke tests.
+- `Crimson-Atlas-*-Nexus.zip` - recommended Nexus upload without a nested NSIS/7z launcher.
 - `SHA256SUMS.txt` - checksums for release verification.
 
 The shipped frontend is stored in Electron's ASAR archive. The memory engine is compiled to native Python extensions and the service is frozen into a standalone directory. This prevents casual access to the original source tree, but no client-side packaging method can make local code impossible to reverse engineer.

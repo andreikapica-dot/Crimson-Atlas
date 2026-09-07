@@ -80,7 +80,11 @@ class PlayerPositionReader:
         log.info("PlayerReader: source set to PHYSICS_HOOK (capture_buf=%#x)", capture_buf_addr)
 
     def update_addresses(self, scan_results: dict[str, ScanResult]) -> None:
-        """Update internal addresses from scan results."""
+        """Update internal addresses from scan results.
+
+        Does NOT select the position source. Use ``select_position_source``
+        to deterministically choose between PHYSICS_HOOK and STATIC_XYZ.
+        """
         self._xyz_addresses = (
             scan_results.get("xyz_x", ScanResult("", 0, 0, 0)).address,
             scan_results.get("xyz_y", ScanResult("", 0, 0, 0)).address,
@@ -89,17 +93,45 @@ class PlayerPositionReader:
         self._world_offset_addr = scan_results.get("world_offset", ScanResult("", 0, 0, 0)).address
 
         x_addr, y_addr, z_addr = self._xyz_addresses
-        if any((x_addr, y_addr, z_addr)):
-            self._source = PositionSource.STATIC_XYZ
+        if x_addr or y_addr or z_addr:
             log.info(
                 "PlayerReader: static XYZ addresses updated X=%#x Y=%#x Z=%#x",
                 x_addr, y_addr, z_addr,
             )
-        elif self._source != PositionSource.PHYSICS_HOOK:
-            self._source = PositionSource.UNAVAILABLE
+        else:
+            log.debug("PlayerReader: static XYZ not resolved")
 
         if self._world_offset_addr:
             log.info("PlayerReader: world offset at %#x", self._world_offset_addr)
+
+    def select_position_source(self) -> PositionSource:
+        """Deterministically select the best available position source.
+
+        Selection policy (source-selection):
+            A) If a validated physics capture buffer is active, use PHYSICS_HOOK.
+            B) Else if static XYZ addresses are available, use STATIC_XYZ.
+            C) Else mark UNAVAILABLE.
+
+        This method is called after the caller has attempted to install a
+        physics hook (and called ``set_physics_hook`` on success, or
+        ``clear_physics_hook`` / left it unset on failure).
+        """
+        if self._capture_buf_addr:
+            self._source = PositionSource.PHYSICS_HOOK
+            return self._source
+
+        x_addr, y_addr, z_addr = self._xyz_addresses
+        if x_addr or y_addr or z_addr:
+            self._source = PositionSource.STATIC_XYZ
+            return self._source
+
+        self._source = PositionSource.UNAVAILABLE
+        return self._source
+
+    def has_static_xyz(self) -> bool:
+        """Whether static XYZ addresses are available as a fallback."""
+        x_addr, y_addr, z_addr = self._xyz_addresses
+        return bool(x_addr or y_addr or z_addr)
 
     def read_position(self) -> PlayerPosition:
         """Read current player position.

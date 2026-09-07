@@ -64,8 +64,11 @@ $pyInstallerArgs = @(
     "--specpath", (Join-Path $projectRoot "release"),
     "--paths", $backendStage,
     "--collect-submodules", "pymem",
+    "--collect-submodules", "pycrimson",
+    "--collect-submodules", "bier",
     "--exclude-module", "tkinter",
-    "--exclude-module", "pytest"
+    "--exclude-module", "pytest",
+    "--noupx"
 )
 foreach ($module in $hiddenImports) { $pyInstallerArgs += @("--hidden-import", $module) }
 $pyInstallerArgs += "service_entry.py"
@@ -87,9 +90,14 @@ $builderDebug = Join-Path $projectRoot "release\artifacts\builder-debug.yml"
 if (Test-Path -LiteralPath $builderDebug) { Remove-Item -LiteralPath $builderDebug -Force }
 
 $smokeExe = Join-Path $projectRoot "release\artifacts\win-unpacked\Crimson Atlas.exe"
-$smokeProcess = Start-Process -FilePath $smokeExe -ArgumentList "--release-smoke-test" -WindowStyle Hidden -Wait -PassThru
+$env:CRIMSON_ATLAS_SMOKE_TEST = "1"
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+$smokeProcess = Start-Process -FilePath $smokeExe -WindowStyle Hidden -Wait -PassThru
+$env:CRIMSON_ATLAS_SMOKE_TEST = ""
 if ($smokeProcess.ExitCode -ne 0) { throw "Desktop release smoke test failed" }
 
 & (Join-Path $PSScriptRoot "audit_release.ps1")
 if ($LASTEXITCODE -ne 0) { throw "Release audit failed" }
+& (Join-Path $PSScriptRoot "build_nexus_package.ps1")
+if ($LASTEXITCODE -ne 0) { throw "Nexus package build failed" }
 Write-Host "Crimson Atlas release build completed."

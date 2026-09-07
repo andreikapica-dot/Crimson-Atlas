@@ -1,6 +1,6 @@
 {
   "name": "crimson-atlas",
-  "version": "0.1.0-beta.3",
+  "version": "0.2.0-beta.4",
   "private": true,
   "description": "Local interactive companion map for Crimson Desert",
   "author": "Andrei",
@@ -14,6 +14,7 @@
     "compression": "normal",
     "electronVersion": "44.0.0",
     "npmRebuild": false,
+    "afterPack": "desktop/afterPack.js",
     "directories": {
       "output": "release/artifacts",
       "buildResources": "release/resources"
@@ -31,6 +32,10 @@
       {
         "from": "release/NOTICE.txt",
         "to": "NOTICE.txt"
+      },
+      {
+        "from": "release/THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
       }
     ],
     "win": {

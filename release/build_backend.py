@@ -71,6 +71,11 @@ def stage_backend() -> None:
         shutil.copy2(MEMORY_SOURCE / module_name, STAGE / "memory" / module_name)
     shutil.copy2(ROOT / "logging_config.py", STAGE / "logging_config.py")
     shutil.copy2(RELEASE / "service_entry.py", STAGE / "service_entry.py")
+    shutil.copytree(
+        ROOT / "services",
+        STAGE / "services",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
 
 
 def main() -> None:

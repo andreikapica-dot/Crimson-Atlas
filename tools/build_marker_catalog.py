@@ -14,6 +14,62 @@ PUBLIC = ROOT / "frontend" / "public"
 ICON_SOURCE = Path(r"D:\Projects\icons")
 ICON_OUTPUT = PUBLIC / "marker-icons"
 
+# The Abyss node feed also contains surface-world objects that share X/Z with
+# the floating islands. Real Abyss stages extracted from the game are centred
+# at Y 1797..2516; the low layer (usually Y 350..1100) is Pywel data and must
+# not be shown on the Abyss map.
+ABYSS_MIN_HEIGHT = 1400.0
+
+EXACT_NAMES = {
+    "ru": {
+        "trading_post": "Торговый пост",
+        "art_shop": "Магазин предметов искусства",
+        "equipment_shop": "Магазин снаряжения",
+        "weapon_shop": "Оружейный магазин",
+        "inn": "Таверна",
+        "hi_common_axe_mace": "Обычный топор или булава",
+        "hi_uncommon_axe_mace": "Необычный топор или булава",
+        "hi_rare_axe_mace": "Редкий топор или булава",
+        "hi_epic_axe_mace": "Эпический топор или булава",
+        "hi_legendary_axe_mace": "Легендарный топор или булава",
+    },
+    "en": {
+        "inn": "Tavern",
+        "hi_common_axe_mace": "Common Axe or Mace",
+        "hi_uncommon_axe_mace": "Uncommon Axe or Mace",
+        "hi_rare_axe_mace": "Rare Axe or Mace",
+        "hi_epic_axe_mace": "Epic Axe or Mace",
+        "hi_legendary_axe_mace": "Legendary Axe or Mace",
+    },
+}
+
+# Public MapGenie Pywel category 15068 (Trading Center), refreshed 2026-09-04.
+# Coordinates are projected into the Atlas game-coordinate plane using the
+# same registered affine transform as tools/build_mapgenie_pywel_tiles.py.
+MAPGENIE_TRADING_CENTERS = [
+    (-10670.266, -3732.843), (-3599.834, 3538.854), (-4445.289, 2337.621),
+    (-6126.020, -1014.233), (-4383.038, -4284.887), (-4281.237, -4062.272),
+    (-6991.153, -3879.822), (-4952.873, -4254.264), (-8791.076, -2869.652),
+    (-10018.549, -4687.023), (-8029.554, -3250.102), (-6773.384, -3354.538),
+    (-7887.075, -2703.313), (-6847.667, -2983.589), (-5665.647, -1836.932),
+    (-5360.563, -5303.227), (-6639.815, 244.742), (-11215.284, -6668.041),
+    (-8726.880, -2090.552), (-11775.176, -2363.478), (-6481.238, -1088.349),
+    (-6179.595, -510.312), (-7175.846, -871.465), (-9972.413, -1266.585),
+    (-10657.468, -4948.297), (-8075.396, -3604.664), (-8209.080, -1740.963),
+    (-6028.878, -1657.530), (-9696.995, -2601.898), (-9452.303, -5125.662),
+    (-5755.394, -2040.368), (-9830.830, -1995.253), (-4533.066, -4775.364),
+    (-8279.127, -566.045), (-8033.184, -664.248), (-6231.857, -3240.659),
+    (-8541.479, -4646.560), (-9386.811, -2101.213), (-9959.092, 1134.810),
+    (-7928.762, -2762.568), (-7467.068, -2474.437), (-10620.379, -6078.613),
+    (-9270.172, -2738.937), (-11481.912, -1736.898),
+]
+
+# Corrections verified against the in-game map. TH.GL currently publishes
+# these individual locations under a broader type than the game UI does.
+POINT_TYPE_OVERRIDES = {
+    ("pywel", "shop", -11219.027, -6663.361): "trading_post",
+}
+
 GROUPS = [
     {"id": "travel", "label": "Путешествия и места", "color": "#62b4e8", "icon": "point-of-interest.png"},
     {"id": "quests", "label": "Задания", "color": "#f0c45d", "icon": "main-quest.png"},
@@ -52,11 +108,28 @@ def translations(path: Path) -> dict[str, str]:
             result[key] = json.loads(f'"{encoded}"')
         except json.JSONDecodeError:
             continue
-    for _ in range(3):
+    for _ in range(8):
+        changed = False
         for key, value in list(result.items()):
             if value.startswith("@") and value in result:
-                result[key] = result[value]
+                replacement = result[value]
+                if replacement != value:
+                    result[key] = replacement
+                    changed = True
+        if not changed:
+            break
     return result
+
+
+def display_name(marker_type: str, localized: dict[str, str], english: dict[str, str], language: str) -> str:
+    """Return a human-readable name and never expose TH.GL localization keys."""
+    fallback = marker_type.replace("_", " ").title()
+    value = EXACT_NAMES.get(language, {}).get(marker_type)
+    if not value:
+        value = localized.get(marker_type) or english.get(marker_type) or fallback
+    if value.startswith("@"):
+        value = EXACT_NAMES.get(language, {}).get(marker_type) or fallback
+    return value
 
 
 def group_for(marker_type: str) -> str:
@@ -65,7 +138,7 @@ def group_for(marker_type: str) -> str:
         return "abyss"
     if "quest" in value or "bounty" in value:
         return "quests"
-    if any(word in value for word in ("chest", "treasure", "artifact", "collect", "memory_fragment", "legendary", "key_item")):
+    if value.startswith("hi_") or any(word in value for word in ("chest", "treasure", "artifact", "collect", "memory_fragment", "legendary", "key_item")):
         return "treasures"
     if value.startswith("mine_") or any(word in value for word in ("mineral", "ore", "quarry")):
         return "ores"
@@ -125,11 +198,20 @@ def description_for(marker_type: str, name: str, group_id: str) -> str:
 def main() -> None:
     ru = translations(WORK / "thgl-ru.html")
     en = translations(WORK / "thgl.html")
+    translation_cache_path = WORK / "marker-name-translations.json"
+    translation_cache = (
+        json.loads(translation_cache_path.read_text(encoding="utf-8"))
+        if translation_cache_path.exists()
+        else {}
+    )
     source_groups = {
         "pywel": json.loads((WORK / "thgl-openworld.json").read_text(encoding="utf-8")),
         "abyss": json.loads((WORK / "thgl-abyss.json").read_text(encoding="utf-8")),
     }
-    marker_types = sorted({group["type"] for groups in source_groups.values() for group in groups})
+    marker_types = sorted(
+        {group["type"] for groups in source_groups.values() for group in groups}
+        | set(POINT_TYPE_OVERRIDES.values())
+    )
     type_index = {marker_type: index for index, marker_type in enumerate(marker_types)}
     types = []
     used_icons = {group["icon"] for group in GROUPS}
@@ -137,12 +219,18 @@ def main() -> None:
         group_id = group_for(marker_type)
         icon = icon_for(marker_type, group_id)
         used_icons.add(icon)
-        fallback = marker_type.replace("_", " ").title()
+        name_ru = display_name(marker_type, ru, en, "ru")
+        name_en = display_name(marker_type, en, en, "en")
         types.append({
             "id": marker_type,
-            "name": ru.get(marker_type) or en.get(marker_type) or fallback,
-            "nameEn": en.get(marker_type) or fallback,
-            "description": description_for(marker_type, ru.get(marker_type) or en.get(marker_type) or fallback, group_id),
+            "name": name_ru,
+            "nameEn": name_en,
+            "translations": {
+                "ru": name_ru,
+                "en": name_en,
+                **translation_cache.get(marker_type, {}),
+            },
+            "description": description_for(marker_type, name_ru, group_id),
             "group": group_id,
             "icon": icon,
         })
@@ -155,38 +243,119 @@ def main() -> None:
         # fragments. Merge by type and exact rounded game position so one
         # in-game object produces one clickable Atlas marker.
         points_by_type: dict[int, list[list[float | None]]] = {}
+        source_ids_by_type: dict[int, list[list[str]]] = {}
         seen_points: set[tuple[int, float, float | None, float]] = set()
+        point_indices: dict[tuple[int, float, float | None, float], int] = {}
+        source_trading_points: list[tuple[float, float | None, float]] = []
         for group in groups:
-            type_id = type_index[group["type"]]
-            points = points_by_type.setdefault(type_id, [])
             for spawn in group.get("spawns", []):
                 p = spawn.get("p", [])
                 if len(p) < 2:
                     continue
                 # TH.GL/Leaflet stores [game Z, game X, game Y].
-                height = round(float(p[2]), 3) if len(p) > 2 and float(p[2]) != 0 else None
+                raw_height = float(p[2]) if len(p) > 2 else 0.0
+                if realm == "abyss" and raw_height < ABYSS_MIN_HEIGHT:
+                    continue
+                height = round(raw_height, 3) if raw_height != 0 else None
                 x = round(float(p[1]), 3)
                 z = round(float(p[0]), 3)
+                corrected_type = POINT_TYPE_OVERRIDES.get(
+                    (realm, group["type"], x, z),
+                    group["type"],
+                )
+                if realm == "pywel" and corrected_type == "trading_post":
+                    source_trading_points.append((x, height, z))
+                    continue
+                type_id = type_index[corrected_type]
+                points = points_by_type.setdefault(type_id, [])
+                source_ids = source_ids_by_type.setdefault(type_id, [])
                 key = (type_id, x, height, z)
                 if key in seen_points:
+                    source_id = spawn.get("id")
+                    if source_id is not None:
+                        point_index = point_indices[key]
+                        ids = source_ids[point_index]
+                        if str(source_id) not in ids:
+                            ids.append(str(source_id))
                     continue
                 seen_points.add(key)
+                point_indices[key] = len(points)
                 points.append([x, height, z])
+                source_ids.append([str(spawn["id"])] if spawn.get("id") is not None else [])
                 marker_count += 1
                 teleport_count += height is not None
-        realm_groups = [
-            {"type": type_id, "points": points}
-            for type_id, points in sorted(points_by_type.items())
-            if points
-        ]
+        if realm == "pywel":
+            type_id = type_index["trading_post"]
+            points = points_by_type.setdefault(type_id, [])
+            source_ids = source_ids_by_type.setdefault(type_id, [])
+            for x, z in MAPGENIE_TRADING_CENTERS:
+                nearest = min(
+                    source_trading_points,
+                    key=lambda item: (item[0] - x) ** 2 + (item[2] - z) ** 2,
+                    default=None,
+                )
+                height = None
+                if nearest and (nearest[0] - x) ** 2 + (nearest[2] - z) ** 2 <= 35 ** 2:
+                    height = nearest[1]
+                points.append([x, height, z])
+                source_ids.append([])
+                marker_count += 1
+                teleport_count += height is not None
+        realm_groups = []
+        for type_id, points in sorted(points_by_type.items()):
+            if not points:
+                continue
+            group_payload: dict[str, object] = {"type": type_id, "points": points}
+            source_ids = source_ids_by_type.get(type_id, [[] for _ in points])
+            if any(source_ids):
+                group_payload["sourceIds"] = source_ids
+            realm_groups.append(group_payload)
         realms[realm] = realm_groups
+
+    # TH.GL publishes Abyss Gate records in the open-world payload even when
+    # the object belongs to the elevated Abyss world layer. Keep the low-Y
+    # surface entrances in Pywel and move only the high-Y internal gates.
+    gate_type_id = type_index["abyss_gate"]
+    pywel_gate_group = next(
+        (group for group in realms.get("pywel", []) if group["type"] == gate_type_id),
+        None,
+    )
+    if pywel_gate_group:
+        pywel_points = pywel_gate_group["points"]
+        pywel_source_ids = pywel_gate_group.get("sourceIds", [[] for _ in pywel_points])
+        surface_points: list[list[float | None]] = []
+        surface_source_ids: list[list[str]] = []
+        abyss_points: list[list[float | None]] = []
+        abyss_source_ids: list[list[str]] = []
+        for point, source_ids in zip(pywel_points, pywel_source_ids, strict=True):
+            target_points, target_source_ids = (
+                (abyss_points, abyss_source_ids)
+                if point[1] is not None and point[1] >= ABYSS_MIN_HEIGHT
+                else (surface_points, surface_source_ids)
+            )
+            target_points.append(point)
+            target_source_ids.append(source_ids)
+        pywel_gate_group["points"] = surface_points
+        pywel_gate_group["sourceIds"] = surface_source_ids
+        if abyss_points:
+            abyss_groups = realms.setdefault("abyss", [])
+            abyss_gate_group = next(
+                (group for group in abyss_groups if group["type"] == gate_type_id),
+                None,
+            )
+            if abyss_gate_group is None:
+                abyss_gate_group = {"type": gate_type_id, "points": [], "sourceIds": []}
+                abyss_groups.append(abyss_gate_group)
+                abyss_groups.sort(key=lambda group: group["type"])
+            abyss_gate_group["points"].extend(abyss_points)
+            abyss_gate_group.setdefault("sourceIds", []).extend(abyss_source_ids)
 
     catalog = {
         "version": 1,
         "source": {
-            "name": "TH.GL",
+            "name": "TH.GL + MapGenie",
             "url": "https://crimsondesert.th.gl/maps/Continent%20of%20Pywel",
-            "licenseNote": "Public map node data; names localized from the public Russian map page.",
+            "licenseNote": "Public TH.GL node data with the Pywel Trading Center category refreshed from public MapGenie map data.",
         },
         "markerCount": marker_count,
         "teleportableCount": teleport_count,

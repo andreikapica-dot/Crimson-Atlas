@@ -1,4 +1,17 @@
-export type Language = "ru" | "en";
+export type Language = "ru" | "en" | "ko" | "zh-CN" | "zh-TW" | "pt";
+
+export const languageOptions: ReadonlyArray<{ id: Language; label: string; title: string }> = [
+  { id: "ru", label: "RU", title: "Русский" },
+  { id: "en", label: "EN", title: "English" },
+  { id: "ko", label: "KO", title: "한국어" },
+  { id: "zh-CN", label: "简", title: "简体中文" },
+  { id: "zh-TW", label: "繁", title: "繁體中文" },
+  { id: "pt", label: "PT", title: "Português" },
+];
+
+export function isLanguage(value: string | null): value is Language {
+  return languageOptions.some((option) => option.id === value);
+}
 
 export const LANGUAGE_STORAGE_KEY = "crimson-atlas-language-v1";
 
@@ -59,9 +72,32 @@ export const translations = {
     heightRequired: "Для личной метки укажите высоту Y",
     localServiceStopped: "Локальная служба не запущена",
     teleportSent: "Команда телепорта отправлена…",
+    routeCalculated: "Маршрут построен · {n} м",
+    routeCalculating: "Crimson Route строит маршрут…",
+    buildRoute: "Построить маршрут",
+    routeCalculatingBtn: "Расчёт…",
+    clearRoute: "Очистить маршрут",
+    routeUnavailable: "Crimson Route недоступен. Установите версию 6.9.4 или новее и включите Local API в настройках Crimson Route.",
     found: "Найдено",
     markFound: "Отметить как найденное",
     unmarkFound: "Снять отметку «Найдено»",
+    foundFromSave: "Найдено в сохранении",
+    foundFromSaveLocked: "Эта отметка подтверждена текущим сохранением",
+    saveProgressSummary: "В сохранении: заданий {q} · знаний {k}",
+    autoFoundCount: "Отмечено на карте по сохранению: {n}",
+    arrived: "Вы прибыли к месту назначения",
+    navigation: "Навигация",
+    noActiveRoute: "Маршрут не выбран",
+    settings: "Настройки", language: "Язык", markerDisplay: "Отображение меток", markerSize: "Размер меток",
+    compact: "Компактный", normal: "Обычный", large: "Крупный", behavior: "Поведение",
+    showFoundMarkers: "Показывать найденные", showFoundMarkersHint: "Выключите, чтобы оставить на карте только незавершённые места.",
+    showHoverDetails: "Подсказка при наведении", showHoverDetailsHint: "Показывает название, категорию и координаты метки.",
+    focusSelectedMarker: "Фокус на выбранной метке", focusSelectedMarkerHint: "Приглушает остальные значки и выделяет выбранный.",
+    clusterMarkers: "Группировать близкие метки", clusterMarkersHint: "Объединяет плотные скопления в один значок с количеством.",
+    markerLabels: "Подписи меток", labelMode_off: "Нет", labelMode_hover: "Наведение", labelMode_selected: "Выбранная", labelMode_always: "Всегда",
+    foundOpacity: "Прозрачность найденных меток",
+    autoReroute: "Автоматически перестраивать маршрут", autoRerouteHint: "Обновляет маршрут Crimson Route по мере движения.",
+    resetMarkerFilters: "Показать все категории и очистить поиск", done: "Готово",
     categories: {
       favorite: "Избранное",
       resource: "Ресурсы",
@@ -126,9 +162,32 @@ export const translations = {
     heightRequired: "Set the Y height for a personal marker",
     localServiceStopped: "Local service is not running",
     teleportSent: "Teleport command sent…",
+    routeCalculated: "Route calculated · {n} m",
+    routeCalculating: "Crimson Route is calculating…",
+    buildRoute: "Build route",
+    routeCalculatingBtn: "Calculating…",
+    clearRoute: "Clear route",
+    routeUnavailable: "Crimson Route is unavailable. Install version 6.9.4 or newer and enable Local API in Crimson Route settings.",
     found: "Found",
     markFound: "Mark as found",
     unmarkFound: "Remove “Found” mark",
+    foundFromSave: "Found in save file",
+    foundFromSaveLocked: "This marker is confirmed by the current save file",
+    saveProgressSummary: "In save: quests {q} · knowledge {k}",
+    autoFoundCount: "Marked on the map from save: {n}",
+    arrived: "You have arrived at your destination",
+    navigation: "Navigation",
+    noActiveRoute: "No active route",
+    settings: "Settings", language: "Language", markerDisplay: "Marker display", markerSize: "Marker size",
+    compact: "Compact", normal: "Normal", large: "Large", behavior: "Behavior",
+    showFoundMarkers: "Show found markers", showFoundMarkersHint: "Turn this off to leave only unfinished locations on the map.",
+    showHoverDetails: "Details on hover", showHoverDetailsHint: "Shows the marker name, category, and coordinates.",
+    focusSelectedMarker: "Focus selected marker", focusSelectedMarkerHint: "Dims other icons and highlights the selected marker.",
+    clusterMarkers: "Group nearby markers", clusterMarkersHint: "Combines dense groups into one icon with a count.",
+    markerLabels: "Marker labels", labelMode_off: "Off", labelMode_hover: "Hover", labelMode_selected: "Selected", labelMode_always: "Always",
+    foundOpacity: "Found marker opacity",
+    autoReroute: "Automatically update route", autoRerouteHint: "Updates the Crimson Route path as you move.",
+    resetMarkerFilters: "Show all categories and clear search", done: "Done",
     categories: {
       favorite: "Favorites",
       resource: "Resources",
@@ -136,6 +195,45 @@ export const translations = {
       danger: "Danger",
       custom: "My markers",
     },
+  },
+  ko: {
+    tagline: "광고 없는 로컬 지도", hideSidebar: "사이드바 숨기기", pywel: "파이웰", abyss: "심연", pywelMap: "파이웰 대륙",
+    searchPlaceholder: "마커 및 좌표 검색", showAll: "모두 표시", hideAll: "모두 숨기기", subcategories: "하위 카테고리", markerTypes: "마커 유형",
+    myMarkers: "내 마커", searchResults: "검색 결과", emptyMarkers: "지도를 클릭해 개인 마커를 추가하세요. 카탈로그 검색은 2자 이상 입력하세요.", searchLimit: "처음 120개 결과를 표시합니다. 검색어를 구체화하세요.", support: "Crimson Atlas 후원",
+    gameConnected: "게임 연결됨", waitingForGame: "게임 대기 중", serviceStopped: "서비스가 실행 중이 아님", startGame: "Crimson Desert를 실행하세요",
+    followPlayer: "플레이어 따라가기", markerAtPlayer: "현재 위치에 마커", calibrateMap: "지도 위치 보정", calibrationTitle: "정밀 지도 보정", calibrationInstruction: "게임 지도에서 캐릭터가 있는 정확한 위치를 클릭하세요.", alignmentSaved: "이 지도에 보정이 저장되었습니다", alignmentReset: "지도 보정이 초기화되었습니다", resetAlignment: "보정 초기화",
+    marker: "마커", edit: "편집", teleport: "텔레포트", delete: "삭제", teleportNeedsGame: "게임에 연결하면 텔레포트를 사용할 수 있습니다.", teleportNeedsHeight: "텔레포트를 사용하려면 편집에서 Y 값을 설정하세요.", editMarker: "마커 편집", newMarker: "새 마커", unnamedMarker: "이름 없는 마커", name: "이름", category: "카테고리", color: "색상", colorCode: "색상 코드", note: "메모", notePlaceholder: "이 위치에는 무엇이 있나요?", cancel: "취소", save: "저장",
+    teleportQuestion: "텔레포트할까요?", teleportPrompt: "캐릭터 이동 위치", currentPosition: "현재 위치", catalogLoadError: "로컬 마커 카탈로그를 불러오지 못했습니다", teleportDone: "텔레포트 완료", teleportUnavailable: "텔레포트 사용 불가", error: "오류", coordinatesOutside: "좌표가 지도 밖에 있습니다", heightRequired: "개인 마커의 Y 높이를 설정하세요", localServiceStopped: "로컬 서비스가 실행 중이 아닙니다", teleportSent: "텔레포트 명령 전송 중…",
+    routeCalculated: "경로 생성 완료 · {n} m", routeCalculating: "Crimson Route가 경로를 계산 중…", buildRoute: "경로 만들기", routeCalculatingBtn: "계산 중…", clearRoute: "경로 지우기", routeUnavailable: "Crimson Route를 사용할 수 없습니다. 6.9.4 이상을 설치하고 Local API를 활성화하세요.", found: "발견함", markFound: "발견함으로 표시", unmarkFound: "발견 표시 해제", foundFromSave: "저장 파일에서 발견됨", foundFromSaveLocked: "현재 저장 파일에서 확인된 마커입니다", saveProgressSummary: "저장 데이터: 퀘스트 {q} · 지식 {k}", autoFoundCount: "저장 파일에서 지도에 표시됨: {n}", arrived: "목적지에 도착했습니다", navigation: "내비게이션", noActiveRoute: "활성 경로 없음",
+    settings: "설정", language: "언어", markerDisplay: "마커 표시", markerSize: "마커 크기", compact: "작게", normal: "보통", large: "크게", behavior: "동작", showFoundMarkers: "발견한 마커 표시", showFoundMarkersHint: "끄면 미완료 위치만 지도에 표시됩니다.", showHoverDetails: "가리키면 세부 정보 표시", showHoverDetailsHint: "이름, 카테고리와 좌표를 표시합니다.", focusSelectedMarker: "선택한 마커 강조", focusSelectedMarkerHint: "다른 아이콘을 흐리게 하고 선택 항목을 강조합니다.", clusterMarkers: "가까운 마커 그룹화", clusterMarkersHint: "밀집된 마커를 개수가 표시된 하나의 아이콘으로 합칩니다.", markerLabels: "마커 이름", labelMode_off: "끄기", labelMode_hover: "가리킬 때", labelMode_selected: "선택 항목", labelMode_always: "항상", foundOpacity: "발견한 마커 투명도", autoReroute: "경로 자동 갱신", autoRerouteHint: "이동할 때 Crimson Route 경로를 갱신합니다.", resetMarkerFilters: "모든 카테고리 표시 및 검색 초기화", done: "완료",
+    categories: { favorite: "즐겨찾기", resource: "자원", quest: "퀘스트", danger: "위험", custom: "내 마커" },
+  },
+  "zh-CN": {
+    tagline: "无广告本地地图", hideSidebar: "隐藏侧栏", pywel: "帕卫尔", abyss: "深渊", pywelMap: "帕卫尔大陆",
+    searchPlaceholder: "搜索标记和坐标", showAll: "全部显示", hideAll: "全部隐藏", subcategories: "子类别", markerTypes: "标记类型", myMarkers: "我的标记", searchResults: "搜索结果", emptyMarkers: "点击地图添加个人标记。搜索目录请至少输入2个字符。", searchLimit: "仅显示前120项结果，请缩小搜索范围。", support: "支持 Crimson Atlas",
+    gameConnected: "游戏已连接", waitingForGame: "等待游戏", serviceStopped: "服务未运行", startGame: "请启动 Crimson Desert", followPlayer: "跟随玩家", markerAtPlayer: "在当前位置添加标记", calibrateMap: "校准地图位置", calibrationTitle: "精确地图校准", calibrationInstruction: "请点击游戏地图上角色所在的准确位置。", alignmentSaved: "已保存此地图的校准", alignmentReset: "地图校准已重置", resetAlignment: "重置校准",
+    marker: "标记", edit: "编辑", teleport: "传送", delete: "删除", teleportNeedsGame: "连接游戏后可使用传送。", teleportNeedsHeight: "请在“编辑”中设置Y值以启用传送。", editMarker: "编辑标记", newMarker: "新标记", unnamedMarker: "未命名标记", name: "名称", category: "类别", color: "颜色", colorCode: "颜色代码", note: "备注", notePlaceholder: "此位置有什么？", cancel: "取消", save: "保存", teleportQuestion: "要传送吗？", teleportPrompt: "将角色移动到", currentPosition: "当前位置", catalogLoadError: "无法加载本地标记目录", teleportDone: "传送完成", teleportUnavailable: "无法传送", error: "错误", coordinatesOutside: "坐标超出地图范围", heightRequired: "请为个人标记设置Y高度", localServiceStopped: "本地服务未运行", teleportSent: "正在发送传送命令…",
+    routeCalculated: "路线已生成 · {n}米", routeCalculating: "Crimson Route 正在计算路线…", buildRoute: "规划路线", routeCalculatingBtn: "计算中…", clearRoute: "清除路线", routeUnavailable: "Crimson Route 不可用。请安装6.9.4或更高版本并启用 Local API。", found: "已发现", markFound: "标记为已发现", unmarkFound: "取消“已发现”", foundFromSave: "已在存档中发现", foundFromSaveLocked: "此标记已由当前存档确认", saveProgressSummary: "存档进度：任务 {q} · 知识 {k}", autoFoundCount: "根据存档在地图上标记：{n}", arrived: "您已到达目的地", navigation: "导航", noActiveRoute: "没有活动路线",
+    settings: "设置", language: "语言", markerDisplay: "标记显示", markerSize: "标记大小", compact: "紧凑", normal: "标准", large: "大", behavior: "行为", showFoundMarkers: "显示已发现标记", showFoundMarkersHint: "关闭后地图仅显示未完成地点。", showHoverDetails: "悬停显示详情", showHoverDetailsHint: "显示名称、类别和坐标。", focusSelectedMarker: "聚焦所选标记", focusSelectedMarkerHint: "淡化其他图标并突出所选标记。", clusterMarkers: "聚合附近标记", clusterMarkersHint: "将密集标记合并为一个带数量的图标。", markerLabels: "标记名称", labelMode_off: "关闭", labelMode_hover: "悬停", labelMode_selected: "已选择", labelMode_always: "始终", foundOpacity: "已发现标记透明度", autoReroute: "自动更新路线", autoRerouteHint: "移动时更新 Crimson Route 路线。", resetMarkerFilters: "显示所有类别并清除搜索", done: "完成",
+    categories: { favorite: "收藏", resource: "资源", quest: "任务", danger: "危险", custom: "我的标记" },
+  },
+  "zh-TW": {
+    tagline: "無廣告本機地圖", hideSidebar: "隱藏側欄", pywel: "帕衛爾", abyss: "深淵", pywelMap: "帕衛爾大陸",
+    searchPlaceholder: "搜尋標記和座標", showAll: "全部顯示", hideAll: "全部隱藏", subcategories: "子類別", markerTypes: "標記類型", myMarkers: "我的標記", searchResults: "搜尋結果", emptyMarkers: "點擊地圖新增個人標記。搜尋目錄請至少輸入2個字元。", searchLimit: "僅顯示前120項結果，請縮小搜尋範圍。", support: "支持 Crimson Atlas",
+    gameConnected: "遊戲已連線", waitingForGame: "等待遊戲", serviceStopped: "服務未執行", startGame: "請啟動 Crimson Desert", followPlayer: "跟隨玩家", markerAtPlayer: "在目前位置新增標記", calibrateMap: "校準地圖位置", calibrationTitle: "精確地圖校準", calibrationInstruction: "請點擊遊戲地圖上角色所在的準確位置。", alignmentSaved: "已儲存此地圖的校準", alignmentReset: "地圖校準已重設", resetAlignment: "重設校準",
+    marker: "標記", edit: "編輯", teleport: "傳送", delete: "刪除", teleportNeedsGame: "連線遊戲後可使用傳送。", teleportNeedsHeight: "請在「編輯」中設定Y值以啟用傳送。", editMarker: "編輯標記", newMarker: "新標記", unnamedMarker: "未命名標記", name: "名稱", category: "類別", color: "顏色", colorCode: "顏色代碼", note: "備註", notePlaceholder: "此位置有什麼？", cancel: "取消", save: "儲存", teleportQuestion: "要傳送嗎？", teleportPrompt: "將角色移動到", currentPosition: "目前位置", catalogLoadError: "無法載入本機標記目錄", teleportDone: "傳送完成", teleportUnavailable: "無法傳送", error: "錯誤", coordinatesOutside: "座標超出地圖範圍", heightRequired: "請為個人標記設定Y高度", localServiceStopped: "本機服務未執行", teleportSent: "正在傳送指令…",
+    routeCalculated: "路線已建立 · {n}公尺", routeCalculating: "Crimson Route 正在計算路線…", buildRoute: "規劃路線", routeCalculatingBtn: "計算中…", clearRoute: "清除路線", routeUnavailable: "Crimson Route 無法使用。請安裝6.9.4或更新版本並啟用 Local API。", found: "已發現", markFound: "標記為已發現", unmarkFound: "取消「已發現」", foundFromSave: "已在存檔中發現", foundFromSaveLocked: "此標記已由目前存檔確認", saveProgressSummary: "存檔進度：任務 {q} · 知識 {k}", autoFoundCount: "根據存檔在地圖上標記：{n}", arrived: "您已抵達目的地", navigation: "導航", noActiveRoute: "沒有活動路線",
+    settings: "設定", language: "語言", markerDisplay: "標記顯示", markerSize: "標記大小", compact: "精簡", normal: "標準", large: "大", behavior: "行為", showFoundMarkers: "顯示已發現標記", showFoundMarkersHint: "關閉後地圖僅顯示未完成地點。", showHoverDetails: "懸停顯示詳情", showHoverDetailsHint: "顯示名稱、類別和座標。", focusSelectedMarker: "聚焦所選標記", focusSelectedMarkerHint: "淡化其他圖示並突出所選標記。", clusterMarkers: "群組附近標記", clusterMarkersHint: "將密集標記合併成一個顯示數量的圖示。", markerLabels: "標記名稱", labelMode_off: "關閉", labelMode_hover: "懸停", labelMode_selected: "已選取", labelMode_always: "永遠", foundOpacity: "已發現標記透明度", autoReroute: "自動更新路線", autoRerouteHint: "移動時更新 Crimson Route 路線。", resetMarkerFilters: "顯示所有類別並清除搜尋", done: "完成",
+    categories: { favorite: "收藏", resource: "資源", quest: "任務", danger: "危險", custom: "我的標記" },
+  },
+  pt: {
+    tagline: "Mapa local sem anúncios", hideSidebar: "Ocultar painel", pywel: "Pywel", abyss: "Abismo", pywelMap: "Continente de Pywel",
+    searchPlaceholder: "Buscar marcadores e coordenadas", showAll: "Mostrar tudo", hideAll: "Ocultar tudo", subcategories: "Subcategorias", markerTypes: "Tipos de marcador", myMarkers: "Meus marcadores", searchResults: "Resultados da busca", emptyMarkers: "Clique no mapa para adicionar um marcador pessoal. Digite pelo menos 2 caracteres para buscar no catálogo.", searchLimit: "Mostrando os primeiros 120 resultados. Refine a busca.", support: "Apoiar o Crimson Atlas",
+    gameConnected: "Jogo conectado", waitingForGame: "Aguardando o jogo", serviceStopped: "Serviço não está em execução", startGame: "Inicie o Crimson Desert", followPlayer: "Seguir jogador", markerAtPlayer: "Marcador na posição atual", calibrateMap: "Calibrar posição do mapa", calibrationTitle: "Alinhamento preciso do mapa", calibrationInstruction: "Clique no local exato do personagem no mapa do jogo.", alignmentSaved: "Alinhamento salvo para este mapa", alignmentReset: "Alinhamento do mapa redefinido", resetAlignment: "Redefinir alinhamento",
+    marker: "Marcador", edit: "Editar", teleport: "Teleportar", delete: "Excluir", teleportNeedsGame: "O teleporte ficará disponível após conectar ao jogo.", teleportNeedsHeight: "Defina Y em “Editar” para habilitar o teleporte.", editMarker: "Editar marcador", newMarker: "Novo marcador", unnamedMarker: "Marcador sem nome", name: "Nome", category: "Categoria", color: "Cor", colorCode: "Código da cor", note: "Nota", notePlaceholder: "O que há neste local?", cancel: "Cancelar", save: "Salvar", teleportQuestion: "Teleportar?", teleportPrompt: "Mover o personagem para", currentPosition: "Posição atual", catalogLoadError: "Não foi possível carregar o catálogo local", teleportDone: "Teleporte concluído", teleportUnavailable: "Teleporte indisponível", error: "erro", coordinatesOutside: "Coordenadas fora do mapa", heightRequired: "Defina a altura Y do marcador pessoal", localServiceStopped: "O serviço local não está em execução", teleportSent: "Comando de teleporte enviado…",
+    routeCalculated: "Rota calculada · {n} m", routeCalculating: "Crimson Route está calculando…", buildRoute: "Criar rota", routeCalculatingBtn: "Calculando…", clearRoute: "Limpar rota", routeUnavailable: "Crimson Route indisponível. Instale a versão 6.9.4 ou mais recente e ative a Local API.", found: "Encontrado", markFound: "Marcar como encontrado", unmarkFound: "Remover marcação", foundFromSave: "Encontrado no arquivo salvo", foundFromSaveLocked: "Este marcador foi confirmado pelo arquivo salvo atual", saveProgressSummary: "No save: missões {q} · conhecimento {k}", autoFoundCount: "Marcado no mapa pelo arquivo salvo: {n}", arrived: "Você chegou ao destino", navigation: "Navegação", noActiveRoute: "Nenhuma rota ativa",
+    settings: "Configurações", language: "Idioma", markerDisplay: "Exibição dos marcadores", markerSize: "Tamanho dos marcadores", compact: "Compacto", normal: "Normal", large: "Grande", behavior: "Comportamento", showFoundMarkers: "Mostrar marcadores encontrados", showFoundMarkersHint: "Desative para deixar apenas locais pendentes no mapa.", showHoverDetails: "Detalhes ao passar o cursor", showHoverDetailsHint: "Mostra nome, categoria e coordenadas.", focusSelectedMarker: "Focar marcador selecionado", focusSelectedMarkerHint: "Atenua os outros ícones e destaca o selecionado.", clusterMarkers: "Agrupar marcadores próximos", clusterMarkersHint: "Combina grupos densos em um ícone com a quantidade.", markerLabels: "Nomes dos marcadores", labelMode_off: "Nunca", labelMode_hover: "Ao passar", labelMode_selected: "Selecionado", labelMode_always: "Sempre", foundOpacity: "Opacidade dos encontrados", autoReroute: "Atualizar rota automaticamente", autoRerouteHint: "Atualiza a rota do Crimson Route durante o movimento.", resetMarkerFilters: "Mostrar todas as categorias e limpar busca", done: "Concluído",
+    categories: { favorite: "Favoritos", resource: "Recursos", quest: "Missões", danger: "Perigo", custom: "Meus marcadores" },
   },
 } as const;
 
@@ -151,6 +249,22 @@ export const catalogGroupLabels: Record<Language, Record<string, string>> = {
     abyss: "Abyss", ores: "Ores and minerals", plants: "Plants and gathering",
     animals: "Animals and fishing", shops: "Merchants and services", crafting: "Crafting and recipes",
     combat: "Enemies and bosses", activities: "Activities", other: "Other",
+  },
+  ko: {
+    travel: "여행 및 장소", quests: "퀘스트", treasures: "보물 및 수집품", abyss: "심연", ores: "광석 및 광물", plants: "식물 및 채집",
+    animals: "동물 및 낚시", shops: "상인 및 서비스", crafting: "제작 및 조리법", combat: "적 및 보스", activities: "활동", other: "기타",
+  },
+  "zh-CN": {
+    travel: "旅行与地点", quests: "任务", treasures: "宝藏与收藏品", abyss: "深渊", ores: "矿石与矿物", plants: "植物与采集",
+    animals: "动物与钓鱼", shops: "商人与服务", crafting: "制作与配方", combat: "敌人与首领", activities: "活动", other: "其他",
+  },
+  "zh-TW": {
+    travel: "旅行與地點", quests: "任務", treasures: "寶藏與收藏品", abyss: "深淵", ores: "礦石與礦物", plants: "植物與採集",
+    animals: "動物與釣魚", shops: "商人與服務", crafting: "製作與配方", combat: "敵人與首領", activities: "活動", other: "其他",
+  },
+  pt: {
+    travel: "Viagem e locais", quests: "Missões", treasures: "Tesouros e colecionáveis", abyss: "Abismo", ores: "Minérios e minerais", plants: "Plantas e coleta",
+    animals: "Animais e pesca", shops: "Comerciantes e serviços", crafting: "Artesanato e receitas", combat: "Inimigos e chefes", activities: "Atividades", other: "Outros",
   },
 };
 

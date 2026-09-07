@@ -12,6 +12,7 @@ export interface CatalogType {
   id: string;
   name: string;
   nameEn: string;
+  translations?: Partial<Record<Language, string>>;
   description?: string;
   group: string;
   icon: string;
@@ -23,7 +24,11 @@ export interface CatalogData {
   source: { name: string; url: string };
   groups: CatalogGroup[];
   types: CatalogType[];
-  realms: Record<Realm, Array<{ type: number; points: Array<[number, number | null, number]> }>>;
+  realms: Record<Realm, Array<{
+    type: number;
+    points: Array<[number, number | null, number]>;
+    sourceIds?: string[][];
+  }>>;
 }
 
 export interface CatalogOverride {
@@ -51,6 +56,7 @@ export interface CatalogMarker {
   note: string;
   sourceName: string;
   sourceUrl: string;
+  sourceIds: string[];
 }
 
 export function flattenCatalog(
@@ -70,9 +76,9 @@ export function flattenCatalog(
       markers.push({
         id,
         type: type.id,
-        name: override.name || (language === "en" ? type.nameEn : type.name),
+        name: override.name || type.translations?.[language] || (language === "ru" ? type.name : type.nameEn),
         nameEn: type.nameEn,
-        description: language === "en" ? (englishGroupDescriptions[type.group] || "") : (type.description || ""),
+        description: language === "ru" ? (type.description || "") : (englishGroupDescriptions[type.group] || ""),
         group: type.group,
         groupLabel: catalogGroupLabels[language][group.id] || group.label,
         groupColor: group.color,
@@ -84,6 +90,7 @@ export function flattenCatalog(
         note: override.note || "",
         sourceName: catalog.source.name,
         sourceUrl: catalog.source.url,
+        sourceIds: typeGroup.sourceIds?.[pointIndex] || [],
       });
     });
   }

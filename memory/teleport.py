@@ -72,7 +72,10 @@ class TeleportEngine:
 
         try:
             local_x = x - ox
-            local_y = y - oy + HEIGHT_BOOST
+            # PlayerPositionReader exposes Y unchanged when converting local
+            # coordinates to map coordinates. Mirror that transform here so a
+            # displayed coordinate round-trips to the same in-game height.
+            local_y = y + HEIGHT_BOOST
             local_z = z - oz
 
             # +0x10 target vector followed by +0x20 command flag.

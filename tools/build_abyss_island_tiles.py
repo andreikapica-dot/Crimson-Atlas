@@ -21,6 +21,11 @@ ISLAND_DIR = ROOT / "frontend" / "public" / "maps" / "abyss" / "islands"
 MANIFEST_PATH = ISLAND_DIR / "manifest.json"
 OUTPUT_DIR = ROOT / "frontend" / "public" / "maps" / "abyss-islands"
 MAP_SCALE = 0.026307676497790568
+# The extracted knowledge images are detail overlays, not full 2048-unit
+# map panels. At the old 1.0 scale they covered roughly twice the footprint
+# shown by the in-game/MapGenie Abyss overview. Keep their verified anchors
+# but render the artwork at half the old width and height.
+ISLAND_DISPLAY_SCALE = 0.5
 
 # Per-image placement corrections derived from live game screenshots. These
 # cannot be one global offset because the UI textures use different anchors.
@@ -54,6 +59,12 @@ def main() -> None:
             bottom_right = item["coordinates"][2]
             left, top = lng_lat_to_pixel(top_left[0], top_left[1], zoom)
             right, bottom = lng_lat_to_pixel(bottom_right[0], bottom_right[1], zoom)
+            center_x = (left + right) / 2.0
+            center_y = (top + bottom) / 2.0
+            half_width = abs(right - left) * ISLAND_DISPLAY_SCALE / 2.0
+            half_height = abs(bottom - top) * ISLAND_DISPLAY_SCALE / 2.0
+            left, right = center_x - half_width, center_x + half_width
+            top, bottom = center_y - half_height, center_y + half_height
             correction = VERIFIED_WORLD_OFFSETS.get(item["id"], {"x": 0.0, "z": 0.0})
             pixel_dx = MAP_SCALE * correction["x"] * (2**zoom)
             pixel_dy = -MAP_SCALE * correction["z"] * (2**zoom)
@@ -94,6 +105,7 @@ def main() -> None:
         "tileSize": TILE_SIZE,
         "minZoom": 0,
         "maxZoom": MAX_ZOOM,
+        "displayScale": ISLAND_DISPLAY_SCALE,
         "verifiedWorldOffsets": VERIFIED_WORLD_OFFSETS,
     }
     (OUTPUT_DIR / "metadata.json").write_text(

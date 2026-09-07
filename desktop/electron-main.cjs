@@ -3,12 +3,14 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const http = require("http");
 const net = require("net");
+const os = require("os");
 const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "frontend", "dist");
 const pythonExe = path.join(projectRoot, ".venv", "Scripts", "python.exe");
-const packagedBackend = path.join(process.resourcesPath, "backend", "CrimsonAtlasService", "CrimsonAtlasService.exe");
+const packagedBackendRoot = path.join(process.resourcesPath, "backend", "CrimsonAtlasService");
+const packagedBackend = path.join(packagedBackendRoot, "CrimsonAtlasService.exe");
 const localUrl = "http://127.0.0.1:7891/";
 const stateDir = path.join(process.env.LOCALAPPDATA || projectRoot, "CrimsonAtlas");
 const windowStatePath = path.join(stateDir, "window-state.json");
@@ -28,11 +30,12 @@ app.setPath("userData", path.join(process.env.LOCALAPPDATA || projectRoot, "Crim
 if (process.platform === "win32") app.setAppUserModelId("CrimsonAtlas.LocalMap");
 
 let mainWindow = null;
+let navigationWindow = null;
 let backend = null;
 let frontendServer = null;
 let shuttingDown = false;
-let topmostTimer = null;
 let saveWindowTimer = null;
+let portableBackendRuntime = null;
 
 function loadWindowState() {
   try {
@@ -64,6 +67,16 @@ function serveFrontend() {
         response.writeHead(400).end("Bad request");
         return;
       }
+      if (requestPath === "/__navigation/show") {
+        showNavigationWindow();
+        response.writeHead(204).end();
+        return;
+      }
+      if (requestPath === "/__navigation/hide") {
+        if (navigationWindow && !navigationWindow.isDestroyed()) navigationWindow.hide();
+        response.writeHead(204).end();
+        return;
+      }
       if (requestPath === "/") requestPath = "/index.html";
       const filePath = path.resolve(distRoot, `.${requestPath}`);
       if (!filePath.startsWith(`${path.resolve(distRoot)}${path.sep}`)) {
@@ -75,9 +88,12 @@ function serveFrontend() {
           response.writeHead(404).end("Not found");
           return;
         }
+        const isMutableAppData = requestPath.startsWith("/data/");
         response.writeHead(200, {
           "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
-          "Cache-Control": requestPath === "/index.html" ? "no-store" : "public, max-age=3600",
+          "Cache-Control": requestPath === "/index.html" || isMutableAppData
+            ? "no-store"
+            : "public, max-age=3600",
         });
         response.end(data);
       });
@@ -85,6 +101,49 @@ function serveFrontend() {
     frontendServer.once("error", reject);
     frontendServer.listen(7891, "127.0.0.1", resolve);
   });
+}
+
+function reinforceNavigationTopmost() {
+  if (!navigationWindow || navigationWindow.isDestroyed() || !navigationWindow.isVisible()) return;
+  navigationWindow.setAlwaysOnTop(true, "screen-saver");
+  navigationWindow.moveTop();
+}
+
+function showNavigationWindow() {
+  if (navigationWindow && !navigationWindow.isDestroyed()) {
+    navigationWindow.showInactive();
+    reinforceNavigationTopmost();
+    return;
+  }
+  navigationWindow = new BrowserWindow({
+    title: "Crimson Atlas Navigation",
+    width: 430,
+    height: 300,
+    minWidth: 320,
+    minHeight: 220,
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    focusable: true,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    backgroundColor: "#0d1012",
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  navigationWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  navigationWindow.setFullScreenable(false);
+  navigationWindow.on("show", reinforceNavigationTopmost);
+  navigationWindow.on("closed", () => { navigationWindow = null; });
+  navigationWindow.once("ready-to-show", () => {
+    navigationWindow?.showInactive();
+    reinforceNavigationTopmost();
+  });
+  void navigationWindow.loadURL(`${localUrl}?view=navigation`);
 }
 
 function waitForPort(port, timeoutMs = 8000) {
@@ -111,7 +170,7 @@ function waitForPort(port, timeoutMs = 8000) {
 }
 
 function startBackend() {
-  const executable = app.isPackaged ? packagedBackend : pythonExe;
+  let executable = app.isPackaged ? packagedBackend : pythonExe;
   const args = app.isPackaged ? [] : ["-m", "app.main"];
   if (!fs.existsSync(executable)) {
     throw new Error(app.isPackaged
@@ -119,15 +178,38 @@ function startBackend() {
       : "Не найдено окружение .venv. Запустите Setup Crimson Atlas.bat");
   }
   fs.mkdirSync(stateDir, { recursive: true });
+  // electron-builder's portable launcher runs resources from a temporary
+  // extraction directory. Keep the PyInstaller onedir runtime in our stable
+  // app-data directory, otherwise a later lazy import (urllib during route
+  // building) can fail after that temporary directory is cleaned up.
+  const resourcesPath = path.resolve(process.resourcesPath).toLowerCase();
+  const tempPath = `${path.resolve(os.tmpdir()).toLowerCase()}${path.sep}`;
+  const isPortableRuntime = Boolean(process.env.PORTABLE_EXECUTABLE_FILE)
+    || Boolean(process.env.PORTABLE_EXECUTABLE_DIR)
+    || resourcesPath.startsWith(tempPath);
+  if (app.isPackaged && isPortableRuntime) {
+    const runtimeParent = path.join(stateDir, "portable-runtime");
+    fs.mkdirSync(runtimeParent, { recursive: true });
+    portableBackendRuntime = fs.mkdtempSync(path.join(runtimeParent, "session-"));
+    fs.cpSync(packagedBackendRoot, portableBackendRuntime, { recursive: true });
+    executable = path.join(portableBackendRuntime, "CrimsonAtlasService.exe");
+  }
   backend = spawn(executable, args, {
     cwd: app.isPackaged ? stateDir : projectRoot,
     windowsHide: true,
     stdio: ["pipe", "ignore", "pipe"],
-    env: { ...process.env, CRIMSON_ATLAS_LOG_DIR: stateDir },
+    env: { ...process.env, CRIMSON_ATLAS_LOG_DIR: stateDir, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
   });
   const log = fs.createWriteStream(path.join(stateDir, "backend.log"), { flags: "a" });
   backend.stderr.pipe(log);
-  backend.once("exit", () => log.end());
+  backend.once("exit", () => {
+    log.end();
+    if (portableBackendRuntime) {
+      const staleRuntime = portableBackendRuntime;
+      portableBackendRuntime = null;
+      fs.rm(staleRuntime, { recursive: true, force: true }, () => {});
+    }
+  });
 }
 
 async function createWindow() {
@@ -176,38 +258,44 @@ async function createWindow() {
     event.preventDefault();
     openExternalIfAllowed(url);
   });
-  const reinforceTopmost = () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.setAlwaysOnTop(true, "screen-saver");
-    mainWindow.moveTop();
+  const reinforceTopmost = (bringToFront = false) => {
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+    if (!mainWindow.isAlwaysOnTop()) mainWindow.setAlwaysOnTop(true, "screen-saver");
+    if (bringToFront) mainWindow.moveTop();
   };
-  reinforceTopmost();
+  reinforceTopmost(false);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.setFullScreenable(false);
-  mainWindow.on("show", reinforceTopmost);
-  mainWindow.on("focus", reinforceTopmost);
+  mainWindow.on("show", () => reinforceTopmost(true));
+  mainWindow.on("focus", () => reinforceTopmost(false));
   mainWindow.on("resize", scheduleWindowStateSave);
   mainWindow.on("move", scheduleWindowStateSave);
   mainWindow.on("close", saveWindowState);
-  mainWindow.on("blur", () => {
-    setTimeout(reinforceTopmost, 50);
-    setTimeout(reinforceTopmost, 300);
-  });
-  topmostTimer = setInterval(reinforceTopmost, 1000);
   globalShortcut.register("CommandOrControl+Shift+A", () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    reinforceTopmost();
-    mainWindow.focus();
+    if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+      mainWindow.hide();
+    } else {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      reinforceTopmost(true);
+      mainWindow.focus();
+    }
+  });
+  globalShortcut.register("CommandOrControl+Shift+N", () => {
+    if (navigationWindow && !navigationWindow.isDestroyed() && navigationWindow.isVisible()) {
+      navigationWindow.hide();
+    } else {
+      showNavigationWindow();
+    }
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
   await mainWindow.loadURL(localUrl);
   mainWindow.on("closed", () => {
-    if (topmostTimer) clearInterval(topmostTimer);
     if (saveWindowTimer) clearTimeout(saveWindowTimer);
-    topmostTimer = null;
     saveWindowTimer = null;
+    if (navigationWindow && !navigationWindow.isDestroyed()) navigationWindow.destroy();
+    navigationWindow = null;
     mainWindow = null;
     app.quit();
   });
@@ -228,7 +316,9 @@ function stopServices() {
   }
 }
 
-const releaseSmokeTest = process.argv.includes("--release-smoke-test");
+const releaseSmokeTest =
+	process.argv.includes("--release-smoke-test") ||
+	process.env.CRIMSON_ATLAS_SMOKE_TEST === "1";
 const singleInstance = releaseSmokeTest || app.requestSingleInstanceLock();
 if (!singleInstance) {
   app.quit();
